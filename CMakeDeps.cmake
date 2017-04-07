@@ -3,6 +3,7 @@
 # README.md
 # configure.bat
 # libs/Utilities/CreateCertificate.cpp
+# libs/Utilities/SSLHelper.cpp
 # libs/Utilities/Utilities.cpp
 # libs/Utilities/Utilities.h
 # libs/Utilities/pch.cpp
@@ -14,8 +15,6 @@
 # tools/StreamClient/ISocketStream.h
 # tools/StreamClient/SSLClient.cpp
 # tools/StreamClient/SSLClient.h
-# tools/StreamClient/SSLHelper.cpp
-# tools/StreamClient/SSLHelper.h
 # tools/StreamClient/SecurityHandle.cpp
 # tools/StreamClient/SecurityHandle.h
 # tools/StreamClient/StreamClient.cpp
@@ -26,8 +25,6 @@
 # tools/StreamServer/Listener.h
 # tools/StreamServer/PassiveSock.cpp
 # tools/StreamServer/PassiveSock.h
-# tools/StreamServer/SSLHelper.cpp
-# tools/StreamServer/SSLHelper.h
 # tools/StreamServer/SSLServer.cpp
 # tools/StreamServer/SSLServer.h
 # tools/StreamServer/StreamServer.cpp

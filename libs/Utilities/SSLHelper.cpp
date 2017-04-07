@@ -286,17 +286,193 @@ SECURITY_STATUS CertFindServerByName(
    return SEC_E_OK;
 }
 
+// Select, and return a handle to a client certificate
+// We take a best guess at a certificate to be used as the SSL certificate for
+// this client
+SECURITY_STATUS
+CertFindClient(PCCERT_CONTEXT & pCertContext, const LPCTSTR pszSubjectName) {
+   HCERTSTORE hMyCertStore = NULL;
+   TCHAR pszFriendlyNameString[128];
+   TCHAR pszNameString[128];
+
+   if (pCertContext)
+      return SEC_E_INVALID_PARAMETER;
+
+   hMyCertStore = CertOpenSystemStore(NULL, _T("MY"));
+
+   if (!hMyCertStore) {
+      int err = GetLastError();
+
+      if (err == ERROR_ACCESS_DENIED)
+         DebugMsg("**** CertOpenStore failed with 'access denied'");
+      else
+         DebugMsg("**** Error %d returned by CertOpenStore", err);
+      return HRESULT_FROM_WIN32(err);
+   }
+
+   if (pCertContext) // The caller passed in a certificate context we no
+                     // longer need, so free it
+      CertFreeCertificateContext(pCertContext);
+   pCertContext = NULL;
+
+   char * serverauth = (char *)szOID_PKIX_KP_CLIENT_AUTH;
+   CERT_ENHKEY_USAGE eku;
+   PCCERT_CONTEXT pCertContextCurrent = NULL;
+   eku.cUsageIdentifier = 1;
+   eku.rgpszUsageIdentifier = &serverauth;
+   // Find a client certificate. Note that this code just searches for a
+   // certificate that has the required enhanced key usage for server
+   // authentication
+   // it then selects the best one (ideally one that contains the client name
+   // somewhere
+   // in the subject name).
+
+   while (NULL != (pCertContextCurrent = CertFindCertificateInStore(
+                      hMyCertStore,
+                      X509_ASN_ENCODING,
+                      CERT_FIND_OPTIONAL_ENHKEY_USAGE_FLAG,
+                      CERT_FIND_ENHKEY_USAGE,
+                      &eku,
+                      pCertContextCurrent))) {
+      // ShowCertInfo(pCertContext);
+      if (!CertGetNameString(
+             pCertContextCurrent,
+             CERT_NAME_FRIENDLY_DISPLAY_TYPE,
+             0,
+             NULL,
+             pszFriendlyNameString,
+             sizeof(pszFriendlyNameString))) {
+         DebugMsg("CertGetNameString failed getting friendly name.");
+         continue;
+      }
+      DebugMsg(
+         "Certificate '%S' is allowed to be used for client authentication.",
+         pszFriendlyNameString);
+      if (!CertGetNameString(
+             pCertContextCurrent,
+             CERT_NAME_SIMPLE_DISPLAY_TYPE,
+             0,
+             NULL,
+             pszNameString,
+             sizeof(pszNameString))) {
+         DebugMsg("CertGetNameString failed getting subject name.");
+         continue;
+      }
+      DebugMsg("   Subject name = %S.", pszNameString);
+      // We must be able to access cert's private key
+      HCRYPTPROV_OR_NCRYPT_KEY_HANDLE hCryptProvOrNCryptKey = NULL;
+      BOOL fCallerFreeProvOrNCryptKey = FALSE;
+      DWORD dwKeySpec;
+      if (!CryptAcquireCertificatePrivateKey(
+             pCertContextCurrent,
+             0,
+             NULL,
+             &hCryptProvOrNCryptKey,
+             &dwKeySpec,
+             &fCallerFreeProvOrNCryptKey)) {
+         DWORD LastError = GetLastError();
+         if (LastError == CRYPT_E_NO_KEY_PROPERTY)
+            DebugMsg("   Certificate is unsuitable, it has no private key");
+         else
+            DebugMsg(
+               "   Certificate is unsuitable, its private key not accessible, Error = 0x%08x",
+               LastError);
+         continue; // Since it has no private key it is useless, just go on
+                   // to the next one
+      }
+      // The minimum requirements are now met,
+      DebugMsg("   Certificate will be saved in case it is needed.");
+      if (pCertContext) // We have a saved certificate context we no longer
+                        // need, so free it
+         CertFreeCertificateContext(pCertContext);
+      pCertContext = CertDuplicateCertificateContext(pCertContextCurrent);
+      if (pszSubjectName && _tcscmp(pszNameString, pszSubjectName))
+         DebugMsg("   Subject name does not match.");
+      else {
+         DebugMsg("   Certificate is ideal, terminating search.");
+         break;
+      }
+   }
+
+   if (!pCertContext) {
+      DWORD LastError = GetLastError();
+      DebugMsg("**** Error 0x%08x returned", LastError);
+      return HRESULT_FROM_WIN32(LastError);
+   }
+
+   return SEC_E_OK;
+}
+
+SECURITY_STATUS CertFindFromIssuerList(
+   PCCERT_CONTEXT & pCertContext,
+   SecPkgContext_IssuerListInfoEx & IssuerListInfo) {
+   PCCERT_CHAIN_CONTEXT pChainContext = NULL;
+   CERT_CHAIN_FIND_BY_ISSUER_PARA FindByIssuerPara = {0};
+   SECURITY_STATUS Status = SEC_E_CERT_UNKNOWN;
+   HCERTSTORE hMyCertStore = NULL;
+
+   hMyCertStore = CertOpenSystemStore(NULL, _T("MY"));
+
+   //
+   // Enumerate possible client certificates.
+   //
+
+   FindByIssuerPara.cbSize = sizeof(FindByIssuerPara);
+   FindByIssuerPara.pszUsageIdentifier = szOID_PKIX_KP_CLIENT_AUTH;
+   FindByIssuerPara.dwKeySpec = 0;
+   FindByIssuerPara.cIssuer = IssuerListInfo.cIssuers;
+   FindByIssuerPara.rgIssuer = IssuerListInfo.aIssuers;
+
+   pChainContext = NULL;
+
+   while (TRUE) {
+      // Find a certificate chain.
+      pChainContext = CertFindChainInStore(
+         hMyCertStore,
+         X509_ASN_ENCODING,
+         0,
+         CERT_CHAIN_FIND_BY_ISSUER,
+         &FindByIssuerPara,
+         pChainContext);
+      if (pChainContext == NULL) {
+         DWORD LastError = GetLastError();
+         if (LastError == CRYPT_E_NOT_FOUND)
+            DebugMsg(
+               "No certificate was found that chains to the one in the issuer list");
+         else
+            DebugMsg("Error 0x%08x finding cert chain", LastError);
+         Status = HRESULT_FROM_WIN32(LastError);
+         break;
+      }
+      DebugMsg("certificate chain found");
+      // Get pointer to leaf certificate context.
+      if (pCertContext) // We have a saved certificate context we no longer
+                        // need, so free it
+         CertFreeCertificateContext(pCertContext);
+      pCertContext = CertDuplicateCertificateContext(
+         pChainContext->rgpChain[0]->rgpElement[0]->pCertContext);
+      if (false && debug && pCertContext)
+         ShowCertInfo(
+            pCertContext, _T("Certificate at the end of the chain selected"));
+      CertFreeCertificateChain(pChainContext);
+      Status = SEC_E_OK;
+      break;
+   }
+   return Status;
+}
+
+
 // Return an indication of whether a certificate is trusted by asking Windows
 // to validate the
 // trust chain (basically asking is the certificate issuer trusted)
-HRESULT CertTrusted(PCCERT_CONTEXT pCertContext) {
+HRESULT CertTrusted(PCCERT_CONTEXT pCertContext, LPCSTR authUsageOid) {
    HTTPSPolicyCallbackData polHttps;
    CERT_CHAIN_POLICY_PARA PolicyPara;
    CERT_CHAIN_POLICY_STATUS PolicyStatus;
    CERT_CHAIN_PARA ChainPara;
    PCCERT_CHAIN_CONTEXT pChainContext = NULL;
    HRESULT Status;
-   LPSTR rgszUsages[] = {(LPSTR)szOID_PKIX_KP_CLIENT_AUTH,
+   LPSTR rgszUsages[] = {(LPSTR)authUsageOid,
                          (LPSTR)szOID_SERVER_GATED_CRYPTO,
                          (LPSTR)szOID_SGC_NETSCAPE};
    DWORD cUsages = _countof(rgszUsages);
@@ -358,6 +534,14 @@ cleanup:
       CertFreeCertificateChain(pChainContext);
 
    return Status;
+}
+
+HRESULT CertTrustedServer(PCCERT_CONTEXT pCertContext) {
+   return CertTrusted(pCertContext, szOID_PKIX_KP_SERVER_AUTH);
+}
+
+HRESULT CertTrustedClient(PCCERT_CONTEXT pCertContext) {
+   return CertTrusted(pCertContext, szOID_PKIX_KP_CLIENT_AUTH);
 }
 
 // Display a UI with the certificate info and also write it to the debug output

@@ -36,7 +36,14 @@ const bool debug = false;
 
 #define WIN32_LEAN_AND_MEAN
 #include <afxwin.h>
+#include <schannel.h>
+#include <wincrypt.h>
 
+#pragma comment(lib, "crypt32.lib")
+
+
+//===========================================================================
+// General utilities
 void SetThreadName(const char * threadName);
 void SetThreadName(const char * threadName, DWORD dwThreadID);
 void DebugMsg(const WCHAR * pszFormat, ...);
@@ -46,3 +53,49 @@ void PrintHexDump(
    const void * const buf,
    const bool verbose = true);
 bool IsUserAdmin();
+
+
+//===========================================================================
+// SSL Utilities
+HRESULT ShowCertInfo(PCCERT_CONTEXT pCertContext, CString Title);
+bool MatchCertHostName(PCCERT_CONTEXT pCertContext, LPCWSTR hostname);
+CString GetHostName(COMPUTER_NAME_FORMAT WhichName = ComputerNameDnsHostname);
+CString GetUserName(void);
+
+HRESULT CertTrustedServer(PCCERT_CONTEXT pCertContext);
+SECURITY_STATUS CertFindServerByName(
+   PCCERT_CONTEXT & pCertContext,
+   LPCTSTR pszSubjectName,
+   boolean fUserStore = false);
+
+HRESULT CertTrustedClient(PCCERT_CONTEXT pCertContext);
+SECURITY_STATUS CertFindClient(
+   PCCERT_CONTEXT & pCertContext,
+   const LPCTSTR pszSubjectName = NULL);
+SECURITY_STATUS CertFindFromIssuerList(
+   PCCERT_CONTEXT & pCertContext,
+   SecPkgContext_IssuerListInfoEx & IssuerListInfo);
+
+class CSSLHelper {
+private:
+   const byte * const OriginalBufPtr;
+   const byte * DataPtr; // Points to data inside message
+   const byte * BufEnd;
+   const int MaxBufBytes;
+   UINT8 contentType, major, minor;
+   UINT16 length;
+   UINT8 handshakeType;
+   UINT16 handshakeLength;
+   bool CanDecode();
+   bool decoded;
+
+public:
+   CSSLHelper(const byte * BufPtr, const int BufBytes);
+   ~CSSLHelper();
+   // Max length of handshake data buffer
+   void TraceHandshake();
+   // Is this packet a complete client initialize packet
+   bool IsClientInitialize();
+   // Get SNI provided hostname
+   CString GetSNI();
+};
