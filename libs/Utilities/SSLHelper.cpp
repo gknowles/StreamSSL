@@ -37,13 +37,6 @@ CString GetUserName(void) {
    return CString();
 }
 
-// defined in another source file (CreateCertificate.cpp)
-PCCERT_CONTEXT CreateCertificate(
-   bool MachineCert = false,
-   LPCWSTR Subject = NULL,
-   LPCWSTR FriendlyName = NULL,
-   LPCWSTR Description = NULL);
-
 bool HostNameMatches(CString HostName, PCWSTR pDNSName) {
    CString DNSName(pDNSName);
    if (DnsNameCompare(HostName, pDNSName)) // The HostName is the DNSName

@@ -57,6 +57,12 @@ bool IsUserAdmin();
 
 //===========================================================================
 // SSL Utilities
+PCCERT_CONTEXT CreateCertificate(
+   bool MachineCert = false,
+   LPCWSTR Subject = NULL,
+   LPCWSTR FriendlyName = NULL,
+   LPCWSTR Description = NULL);
+
 HRESULT ShowCertInfo(PCCERT_CONTEXT pCertContext, CString Title);
 bool MatchCertHostName(PCCERT_CONTEXT pCertContext, LPCWSTR hostname);
 CString GetHostName(COMPUTER_NAME_FORMAT WhichName = ComputerNameDnsHostname);

@@ -10,13 +10,6 @@
 
 using namespace std;
 
-// defined in another source file (CreateCertificate.cpp)
-PCCERT_CONTEXT CreateCertificate(
-   bool MachineCert = false,
-   LPCWSTR Subject = NULL,
-   LPCWSTR FriendlyName = NULL,
-   LPCWSTR Description = NULL);
-
 // Given a pointer to a certificate context, return the certificate name (the
 // friendly name if there is one, the subject name otherwise).
 
